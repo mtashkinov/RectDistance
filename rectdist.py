@@ -8,7 +8,7 @@ def find_thresholds_theta(lines):
     max_diff = 0.0
     for i in range(len(lines)):
         for j in range(i, len(lines)):
-            if (abs(lines[i][0][1] - lines[j][0][1]) < abs(abs(lines[i][0][1] - lines[j][0][1]) - math.pi)):
+            if abs(lines[i][0][1] - lines[j][0][1]) < abs(abs(lines[i][0][1] - lines[j][0][1]) - math.pi):
                 cur_diff = abs(lines[i][0][1] - lines[j][0][1])
             else:
                 cur_diff = abs(abs(lines[i][0][1] - lines[j][0][1]) - math.pi)
@@ -139,15 +139,49 @@ def draw_line(img, (rho, theta), color):
     cv2.line(img, (x1,y1), (x2,y2), color, 5)
 
 
-def find_red_contour(img):
+def is_min(array, position):
+    area_size = 5
+    if position - area_size >= 0:
+        start = position - area_size
+    else:
+        start = 0
+    if position + area_size < len(array):
+        end = position + area_size
+    else:
+        end = len(array) - 1
+    area = array[start:end + 1]
+    return (min(area) == array[position]) & (array[position] != 0)
+
+
+def find_red_threshold(img):
     img = cv2.GaussianBlur(img, (5, 5), 5)
-    mask = cv2.inRange(img, (0, 0, 230), (200, 200, 255))
-    im2, contours, _ = cv2.findContours(mask, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+    contours_num = []
+    for threshold in range(180, 255):
+        mask = cv2.inRange(img, (0, 0, threshold), (200, 200, 255))
+        _, contours, _ = cv2.findContours(mask, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+        contours_num.append(len(contours))
+
+    position = len(contours_num) - 2
+    while (position >= 0) & (not is_min(contours_num, position)):
+        position -= 1
+
+    return position + 180
+
+
+def find_red_contour(img):
+    img = cv2.GaussianBlur(img, (11, 11), 11)
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+    mask1 = cv2.inRange(img, (160, 50, 50), (179, 255, 255))
+    mask2 = cv2.inRange(img, (0, 50, 50), (10, 255, 255))
+    mask = cv2.bitwise_or(mask1, mask2)
+    mask = cv2.dilate(mask, ())
+    _, contours, _ = cv2.findContours(mask, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
     max_contour = contours[0]
     for contour in contours:
         if cv2.contourArea(contour) > cv2.contourArea(max_contour):
             max_contour = contour
     return max_contour
+
 
 def detect_rect(img):
     empty = np.zeros((img.shape[0], img.shape[1]))
@@ -156,69 +190,16 @@ def detect_rect(img):
     im2 = np.array(255 * empty, dtype=np.uint8)
     lines = cv2.HoughLines(im2,1,np.pi/180, 100)
     sides = classify_lines(lines)
-    return sides, contour
+    return (filter_lines(sides[0]), filter_lines(sides[1]), filter_lines(sides[2]), filter_lines(sides[3])), contour
 
 
-def count_sqr_distance(point1, point2):
-    return (point1[0] - point2[0]) * (point1[0] - point2[0]) + (point1[1] - point2[1]) * (point1[1] - point2[1])
-
-
-def find_farthest_point(contour, point):
-    max_dist = 0.0
-    vertex = point
-    for x in contour:
-        cur_dist = count_sqr_distance(point, x[0])
-        if cur_dist > max_dist:
-            vertex = x[0]
-            max_dist = cur_dist
-    return vertex
-
-
-def count_sqr_distance_point_line(a, b, c, point):
-    return abs(a * point[0] + b * point[1] + c + 0.0) / (a * a +  b * b)
-
-
-def find_farthest_point_line(contour, point1, point2):
-    a = point2[1] - point1[1]
-    b = point1[0] - point2[0]
-    c = point1[1] * point2[0] - point1[0] * point2[1]
-    max_dist = 0.0
-    vertex = point1
-    for x in contour:
-        cur_dist = count_sqr_distance_point_line(a, b, c, x[0])
-        if cur_dist > max_dist:
-            max_dist = cur_dist
-            vertex = x[0]
-    return vertex
-
-
-def detect_rect1(img):
-    img = cv2.GaussianBlur(img, (5, 5), 5)
-    mask = cv2.inRange(img, (0, 0, 230), (30, 30, 255))
-
-    im2, contours, _ = cv2.findContours(mask, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
-    max_contour = contours[0]
-    for contour in contours:
-        if cv2.contourArea(contour) > cv2.contourArea(max_contour):
-            max_contour = contour
-
-    #vertexes = []
-    #vertexes.append(find_farthest_point(max_contour, max_contour[0][0]))
-    #vertexes.append(find_farthest_point(max_contour, vertexes[0]))
-    #vertexes.append(find_farthest_point_line(max_contour, vertexes[0], vertexes[1]))
-    #vertexes.append(find_farthest_point(max_contour, vertexes[2]))
-
-    #return vertexes
-
-
-img = cv2.imread('ex\\1.jpg')
-res = detect_rect(img)
+img = cv2.imread('ex\\18.jpg')
 empty = np.zeros((img.shape[0], img.shape[1], 3))
 sides, contour = detect_rect(img)
-draw_line(empty, filter_lines(sides[0]), (255, 0, 255))
-draw_line(empty, filter_lines(sides[1]), (255, 0, 255))
-draw_line(empty, filter_lines(sides[2]), (255, 0, 255))
-draw_line(empty, filter_lines(sides[3]), (255, 0, 255))
+draw_line(empty, sides[0], (255, 0, 255))
+draw_line(empty, sides[1], (255, 0, 255))
+draw_line(empty, sides[2], (255, 0, 255))
+draw_line(empty, sides[3], (255, 0, 255))
 cv2.drawContours(empty, [contour], 0, (0, 255, 0), 5)
 
 empty = cv2.resize(empty, (int(empty.shape[1] * (512.0 / empty.shape[0])), 512))
