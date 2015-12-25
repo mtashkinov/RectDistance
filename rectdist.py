@@ -1,6 +1,13 @@
 import cv2
 import numpy as np
 import math
+from scipy.optimize import root
+from scipy.optimize import fsolve
+
+
+f = 2220
+c = (940, 1251)
+
 
 def find_thresholds_theta(lines):
     theta1 = lines[0][0][1]
@@ -156,7 +163,7 @@ def detect_rect(img):
     im2 = np.array(255 * empty, dtype=np.uint8)
     lines = cv2.HoughLines(im2,1,np.pi/180, 100)
     sides = classify_lines(lines)
-    return sides, contour
+    return (filter_lines(sides[0]), filter_lines(sides[1]), filter_lines(sides[2]), filter_lines(sides[3])), contour
 
 
 def count_sqr_distance(point1, point2):
@@ -211,16 +218,118 @@ def detect_rect1(img):
     #return vertexes
 
 
-img = cv2.imread('ex\\1.jpg')
+def vector_product(a, b):
+    x1, y1, z1 = a
+    x2, y2, z2 = b
+
+    res = (y1 * z2 - z1 * y2, z1 * x2 - x1 * z2, x1 * y2 - y1 * x2)
+    return int(res[0] / res[2]), int(res[1] / res[2])
+
+
+def count_line_coef(p1, p2):
+    return p2[1] - p1[1], p1[0] - p2[0], p1[1] * p2[0] - p1[0] * p2[1]
+
+
+def sqr_side_len(p1, p2):
+    return (p1[0] - p2[0])**2 + (p1[1] - p2[1])**2
+
+
+def get_max_len(points):
+    return max(sqr_side_len(points[i], points[i + 1]) for i in range(-1, 3))
+
+
+'''
+def func(z):
+    z_b = [[z[i]**2, - 2*z[i]*z[i + 1], z[i + 1]**2] for i in range(2)]
+    z_c = [[z[i - 1]*z[i], -z[i - 1]*z[i + 1], -z[i]**2, z[i]*z[i + 1]] for i in range(1, 3)]
+
+    f = [sum(z_b[j][i] * b[j][i] for i in range(3)) - rect_size[j]**2 for j in range(2)]
+    f = f + [sum(z_c[j][i] * c[j][i] for i in range(4)) for j in range(2)]
+    #print f
+
+    df = [[2 * b[0][0] * z[0] - 2 * b[0][1] * z[1], 2 * b[0][2] * z[1] - 2 * b[0][1] * z[1], 0, 0],
+          [0, 2 * b[1][0] * z[1] - 2 * b[1][1] * z[2], 2 * b[0][2] * z[2] - 2 * b[1][1] * z[1], 0],
+          [z[1] * c[0][0] - z[2] * c[0][1], z[0] * c[0][0] - 2 * z[1] * c[0][2] + z[2] * c[0][3],
+              -z[0] * c[0][1] + z[1] * c[0][3], 0],
+          [0, z[2] * c[1][0] - z[3] * c[1][1], z[1] * c[1][0] - 2 * z[2] * c[1][2] + z[3] * c[1][3],
+              -z[1] * c[1][1] + z[2] * c[1][3]]]
+
+    return f, df
+
+'''
+def func(z):
+    z_b = [[z[j]**2, - 2*z[j]*z[i], z[i]**2] for i in range(3) for j in range(i)]
+
+    f = [sum(z_b[j][i] * b[j][i] for i in range(3)) - rect_size[j] for j in range(3)]
+    #print f
+
+    df = [[2 * b[0][0] * z[0] - 2 * b[0][1] * z[1], 2 * b[0][2] * z[1] - 2 * b[0][1] * z[1], 0],
+          [2 * b[1][0] * z[0] - 2 * b[1][1] * z[2], 0, 2 * b[1][2] * z[2] - 2 * b[1][1] * z[0]],
+          [0, 2 * b[2][0] * z[1] - 2 * b[2][1] * z[2], 2 * b[2][2] * z[2] - 2 * b[2][1] * z[1]]
+          ]
+
+    return f, df
+
+def fun(z):
+    z_b = [[z[j]**2, - 2*z[j]*z[i], z[i]**2] for i in range(3) for j in range(i)]
+    #print z_b
+    #print b
+    f = [sum(z_b[j][i] * b[j][i] for i in range(3)) - rect_size[j] for j in range(3)]
+    #print 'f:', f
+    return f
+
+def find_distance(size):
+    global b
+    global rect_size
+
+    rect_size = size
+    rect_points = [find_cross_point(sides[i], sides[i + 1]) for i in range(3)] + [find_cross_point(sides[3], sides[0])]
+
+    a = [[(rect_points[i][j] - c[j]) / f for j in range(2)] for i in range(3)]
+    b = [[a[j][0]**2 + a[j][1]**2 + 1, a[j][0]*a[i][0] + a[j][1]*a[i][1] + 1, a[i][0]**2 + a[i][1]**2 + 1]
+     for i in range(3) for j in range(i)]
+
+    estimate = math.sqrt(29.7**2 + 21.0**2) * f / math.sqrt(sum((rect_points[0][i] - rect_points[2][i])**2
+                        for i in range(2)))
+    sol = fsolve(fun, 3*[estimate])
+
+    res_points = [(sol[i] * a[i][0], sol[i] * a[i][1], sol[i]) for i in range(3)]
+    res = [(res_points[0][i] + res_points[2][i]) /2 for i in range(3)]
+
+    return math.sqrt(sum(res[i]**2 for i in range(3)))
+
+
+img = cv2.imread('ex\\3.jpg')
 res = detect_rect(img)
 empty = np.zeros((img.shape[0], img.shape[1], 3))
 sides, contour = detect_rect(img)
-draw_line(empty, filter_lines(sides[0]), (255, 0, 255))
-draw_line(empty, filter_lines(sides[1]), (255, 0, 255))
-draw_line(empty, filter_lines(sides[2]), (255, 0, 255))
-draw_line(empty, filter_lines(sides[3]), (255, 0, 255))
+draw_line(empty, sides[0], (255, 0, 255))
+draw_line(empty, sides[1], (255, 0, 255))
+draw_line(empty, sides[2], (255, 0, 255))
+draw_line(empty, sides[3], (255, 0, 255))
 cv2.drawContours(empty, [contour], 0, (0, 255, 0), 5)
 
+b = []
+rect_size = ()
+print find_distance( (21.0**2, 29.7**2 + 21.0**2, 29.7**2) )
 empty = cv2.resize(empty, (int(empty.shape[1] * (512.0 / empty.shape[0])), 512))
-cv2.imshow('img', empty)
+
+
+video = cv2.VideoCapture('VID_20151225_144221_1.mp4')
+
+while True:
+    flag, frame = video.read()
+    if flag == 0:
+        break
+
+    rows, cols, _ = frame.shape
+
+    M = cv2.getRotationMatrix2D((cols/2, rows/2), -90, 1)
+    frame = cv2.warpAffine(frame, M, (cols, rows))
+
+    sides, contour = detect_rect(frame)
+
+video.release()
+cv2.destroyAllWindows()
+
 cv2.waitKey(0)
