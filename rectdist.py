@@ -139,36 +139,15 @@ def draw_line(img, (rho, theta), color):
     cv2.line(img, (x1,y1), (x2,y2), color, 5)
 
 
-def is_min(array, position):
-    area_size = 5
-    if position - area_size >= 0:
-        start = position - area_size
-    else:
-        start = 0
-    if position + area_size < len(array):
-        end = position + area_size
-    else:
-        end = len(array) - 1
-    area = array[start:end + 1]
-    return (min(area) == array[position]) & (array[position] != 0)
+def filter_contours(contours, areas, image_area):
+    res = []
+    for i in range(len(areas)):
+        if areas[i] > image_area * 0.01:
+            res.append(contours[i])
+    return res
 
 
-def find_red_threshold(img):
-    img = cv2.GaussianBlur(img, (5, 5), 5)
-    contours_num = []
-    for threshold in range(180, 255):
-        mask = cv2.inRange(img, (0, 0, threshold), (200, 200, 255))
-        _, contours, _ = cv2.findContours(mask, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
-        contours_num.append(len(contours))
-
-    position = len(contours_num) - 2
-    while (position >= 0) & (not is_min(contours_num, position)):
-        position -= 1
-
-    return position + 180
-
-
-def find_red_contour(img):
+def find_red_contours(img):
     img = cv2.GaussianBlur(img, (11, 11), 11)
     img = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
     mask1 = cv2.inRange(img, (160, 50, 50), (179, 255, 255))
@@ -176,31 +155,47 @@ def find_red_contour(img):
     mask = cv2.bitwise_or(mask1, mask2)
     mask = cv2.dilate(mask, ())
     _, contours, _ = cv2.findContours(mask, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
-    max_contour = contours[0]
+    fst_contour = contours[0]
+    fst_area = cv2.contourArea(fst_contour)
+    snd_area = 0
+    snd_contour = []
     for contour in contours:
-        if cv2.contourArea(contour) > cv2.contourArea(max_contour):
-            max_contour = contour
-    return max_contour
+        cur_area = cv2.contourArea(contour)
+        if cur_area > fst_area:
+            snd_contour = fst_contour
+            snd_area = fst_area
+            fst_contour = contour
+            fst_area = cur_area
+        elif cur_area > snd_area:
+            snd_contour = contour
+            snd_area = cur_area
+    res = [fst_contour, snd_contour]
+    areas = [fst_area, snd_area]
+    return filter_contours(res, areas, img.shape[0] * img.shape[1])
 
 
-def detect_rect(img):
-    empty = np.zeros((img.shape[0], img.shape[1]))
-    contour = find_red_contour(img)
-    cv2.drawContours(empty, [contour], 0, (255, 255, 255), 2)
-    im2 = np.array(255 * empty, dtype=np.uint8)
-    lines = cv2.HoughLines(im2,1,np.pi/180, 100)
-    sides = classify_lines(lines)
-    return (filter_lines(sides[0]), filter_lines(sides[1]), filter_lines(sides[2]), filter_lines(sides[3])), contour
+def detect_rects(img):
+    res = []
+    contours = find_red_contours(img)
+    for contour in contours:
+        empty = np.zeros((img.shape[0], img.shape[1]))
+        cv2.drawContours(empty, [contour], 0, (255, 255, 255), 2)
+        im2 = np.array(255 * empty, dtype=np.uint8)
+        lines = cv2.HoughLines(im2,1,np.pi/180, 100)
+        sides = classify_lines(lines)
+        res.append((filter_lines(sides[0]), filter_lines(sides[1]), filter_lines(sides[2]), filter_lines(sides[3])))
+    return res, contours
 
 
-img = cv2.imread('ex\\18.jpg')
+img = cv2.imread('ex1\\lol.png')
 empty = np.zeros((img.shape[0], img.shape[1], 3))
-sides, contour = detect_rect(img)
-draw_line(empty, sides[0], (255, 0, 255))
-draw_line(empty, sides[1], (255, 0, 255))
-draw_line(empty, sides[2], (255, 0, 255))
-draw_line(empty, sides[3], (255, 0, 255))
-cv2.drawContours(empty, [contour], 0, (0, 255, 0), 5)
+sides, contours = detect_rects(img)
+for i in range(len(contours)):
+    draw_line(empty, sides[i][0], (255, 0, 255))
+    draw_line(empty, sides[i][1], (255, 0, 255))
+    draw_line(empty, sides[i][2], (255, 0, 255))
+    draw_line(empty, sides[i][3], (255, 0, 255))
+    cv2.drawContours(empty, [contours[i]], 0, (0, 255, 0), 5)
 
 empty = cv2.resize(empty, (int(empty.shape[1] * (512.0 / empty.shape[0])), 512))
 cv2.imshow('img', empty)
