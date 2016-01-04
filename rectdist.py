@@ -7,8 +7,10 @@ from scipy.optimize import fsolve
 
 f = 2220
 c = (940, 1251)
-
-
+'''
+f = 2491
+c = (1254, 993)
+'''
 def find_thresholds_theta(lines):
     theta1 = lines[0][0][1]
     theta2 = lines[0][0][1]
@@ -155,8 +157,8 @@ def filter_contours(contours, areas, image_area):
 def find_red_contours(img):
     img = cv2.GaussianBlur(img, (11, 11), 11)
     img = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-    mask1 = cv2.inRange(img, (160, 50, 50), (179, 255, 255))
-    mask2 = cv2.inRange(img, (0, 50, 50), (10, 255, 255))
+    mask1 = cv2.inRange(img, (160, 100, 100), (179, 255, 255))
+    mask2 = cv2.inRange(img, (0, 100, 100), (10, 255, 255))
     mask = cv2.bitwise_or(mask1, mask2)
     mask = cv2.dilate(mask, ())
     _, contours, _ = cv2.findContours(mask, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
@@ -239,7 +241,7 @@ def projection(point):
 b = []
 rect_size = ()
 
-video = cv2.VideoCapture('VID_20151225_195650.mp4')
+video = cv2.VideoCapture('20160103_185062.MOV')
 
 flag, frame = video.read()
 
@@ -251,17 +253,20 @@ writer = cv2.VideoWriter("output.avi", cv2.VideoWriter_fourcc(*'MJPG'),
 
 while flag:
     flag, frame = video.read()
+
     if flag == 0:
         break
 
     rows, cols, _ = frame.shape
 
-    M = cv2.getRotationMatrix2D((cols/2, rows/2), -90, 1)
-    frame = cv2.warpAffine(frame, M, (cols, rows))
+    #M = cv2.getRotationMatrix2D((cols/2, rows/2), -90, 1)
+    #frame = cv2.warpAffine(frame, M, (cols, rows))
+
     try:
         sides, contour = detect_rects(frame)
-        #for i in range(len(sides)):
-        for i in range(1):
+
+        centers = []
+        for i in range(len(sides)):
             p2 = find_distance(sides[i], (29.7**2, 29.7**2 + 21.0**2, 21.0**2))
             p1 = find_distance(sides[i], (21.0**2, 29.7**2 + 21.0**2, 29.7**2))
 
@@ -272,12 +277,20 @@ while flag:
 
             dist = str(math.sqrt(sum(p[0][i]**2 for i in range(3))))
             cv2.putText(frame, dist, p[2], cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 0, 0), 1, cv2.LINE_AA)
+
+            centers.append(p)
+
+        if len(sides) == 2:
+            dist_center = tuple([(centers[0][2][i] + centers[1][2][i]) / 2 for i in range(2)])
+            dist = str(math.sqrt(sqr_dist(centers[0][0], centers[1][0])))
+            cv2.putText(frame, dist, dist_center, cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 0, 0), 1, cv2.LINE_AA)
     except Exception:
         None
 
     writer.write(frame)
 
 video.release()
+
 cv2.destroyAllWindows()
 
 cv2.waitKey(0)
